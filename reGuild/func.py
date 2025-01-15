@@ -1,44 +1,43 @@
 if not __name__ == "__main__":
     #-------------Work with system
     import os
-    import shutil
+    from shutil import rmtree
     #-------------Work with timers and math
     import time
     #-------------Work with strings
     import string
     #-------------Work with save data
-    import sqlite3
     import logging
     #------------Data string/html/css analise
     import re 
     import Levenshtein
+    import vk_api
+    from vk_api import VkUpload
 else:
     raise Exception("This is not main file, it is a library")
 
 #-------------------------------------------------------------
 
-#Задержка (сон на 0,2 секунды)
-def Delay(times=1):
-    time.sleep(0.2*times)
+#Задержка (сон на 0,1 секунды)
 
 def log_and_print(data, show=False):
     logger = logging.getLogger(__name__)
     file = f'file.log'
+    msg = f'\x1b[36;2m{data["process"]} \x1b[m--> '
     if data["sucsess"]:
-        msg = f"\x1b[32m{data['sucsess']} \x1b[m{data['data']}"
+        msg += f"\x1b[32m{data['sucsess']} \x1b[m{data['data']}"
         logging.basicConfig(filename=file, level=logging.INFO)
         logger.info(msg)
     else:
-        msg = f"\x1b[31m{data['sucsess']} \x1b[34m{data['data']}\x1b[m {data['error']}"
-        logging.basicConfig(filename=file, level=logging.CRITICAL)
-        logger.critical(msg)
-    Delay(2)
+        msg += f"\x1b[31m{data['sucsess']} \x1b[34m{data['data']}\x1b[m {data['error']}"
+        logging.basicConfig(filename=file, level=logging.ERROR)
+        logger.error(msg)
     logging.shutdown()
     if show:
         print(msg)
 
 #Возвращает историю
-def get_history(api, peer_id, start_message_id=None, debag=True):
+def get_history(api, peer_id, start_message_id=None, debug=True):
     result = {"process": "#get_history", "sucsess": True, "error": None, "data": None}
     try:
         lastMessage = api.method(
@@ -48,17 +47,16 @@ def get_history(api, peer_id, start_message_id=None, debag=True):
                 "start_message_id": start_message_id
             }
         )
-        Delay()
         result["data"] = lastMessage["items"]
     except Exception as error:
         result["sucsess"] = False
-        result["error"] = f"\x1b[31m --> {error}"
-    log_and_print(result, debag)
+        result["error"] = error
+    log_and_print(result, debug)
     return result
 
 
 #Удаление сообщений
-def delete_msg(session, peer_id, msg_id, delete_for_all=True, debag=True):
+def delete_msg(session, peer_id, msg_id, delete_for_all=True, debug=True):
     result = {"process": "#delete_msg", "sucsess": True, "error": None, "data": None}
     try:
         session.method(
@@ -69,39 +67,43 @@ def delete_msg(session, peer_id, msg_id, delete_for_all=True, debag=True):
                 "peer_id": peer_id
             }
         )
-        Delay()
     except Exception as error:
         result["sucsess"] = False
-        result["error"] =  f"\x1b[31m --> {error}"
-    log_and_print(result, debag)
+        result["error"] = error
+    log_and_print(result, debug)
     return result
 
 #Отправляет сообщение и дополнительно - уведомления/рассылка
-def send_msg(session, type, to_id, msg, message_id=None, reply_to=None, debag=True):
-    result = {"process": dadaw, "sucsess": True, "error" : None, "data": None}
+def send_msg(session, type, to_id, msg="", message_id=[], attachment=None, reply_to=None, debug=True):
+    result = {"process": "#send_msg", "sucsess": True, "error" : None, "data": None}
+    if attachment is not None and "." in attachment:
+        upload = vk_api.upload.VkUpload(session)
+        obj = upload.document(attachment)
+        attachment = f"doc{session.get_api().users.get()[0]['id']}_{obj['doc']['id']}"
+    print(attachment)
     try:
         session.method(
             "messages.send",
             {
                 f"{type}_id": to_id,
                 "message": msg,
+                "attachment": attachment,
                 "reply_to": reply_to,
-                "forward_messages": [message_id],
+                "forward_messages": message_id,
                 "random_id": 0
             }
         )
-        Delay()
     except Exception as error:
         result ["sucsess"] =  False
-        result["error"] = f"\x1b[32m#send_msg \x1b[m--> \x1b[5;35;40m{error}"
+        result["error"] = error
         result["data"] = [type, to_id, msg, message_id, reply_to]
-    log_and_print(result, debag)
+    log_and_print(result, debug)
     return result
 
 
 #уведомление
-def notice(session, notice_list, debag=True):
-    result = {"process": dadaw, "sucsess": True, "error": {}, "data": None}
+def notice(session, notice_list, debug=True):
+    result = {"process": "#notice", "sucsess": True, "error": {}, "data": None}
     for msg in notice_list:
         sml_result = []
         for to_id in notice[msg]:
@@ -112,13 +114,13 @@ def notice(session, notice_list, debag=True):
             except Exception as error:
                 sml_result.append({to_id: False, "error": error, "data": None})
         result["error"][msg] = sml_result
-    log_and_print(result, debag)
+    log_and_print(result, debug)
     return result
 
 
 #Читает профиль и возвращет информацию про него
-def read_profile(prof, debag=True):
-    result = {"process": dadaw, "sucsess": True, "error": None, "data": None}
+def read_profile(prof, debug=False):
+    result = {"process": "#read_profile", "sucsess": True, "error": None, "data": None}
     try:
         user_id = int(re.findall(r"\[id(\d+)\|", prof)[0]) #айди
         u_class = re.findall(r"Класс: ([\w\s]+),", prof)[0] #класс
@@ -132,19 +134,31 @@ def read_profile(prof, debag=True):
         force = int(re.findall(r'👊([\d]+)', prof)[0]) #сила
         dexterity = int(re.findall(r'🖐([\d]+)', prof)[0]) #ловкость
         health = int(re.findall(r'❤([\d]+)', prof)[0]) #выносливость
-        atack = int(re.findall(r'🗡([\d]+)', prof)[0]) #атака
+        attack = int(re.findall(r'🗡([\d]+)', prof)[0]) #атака
         armor = int(re.findall(r'🛡([\d]+)', prof)[0]) #защита
-        result = {"process": dadaw, "sucsess": True, "error" : None, "data": (user_id, u_class, race, guild, role, karma, lvl, force, dexterity, health, atack, armor)}
+        result["data"] = {
+            "userid": user_id,
+            "class": u_class,
+            "race": race,
+            "guild": guild,
+            "role": role,
+            "karma": karma,
+            "lvl": lvl,
+            "force": force,
+            "dexterity": dexterity,
+            "health": health,
+            "attack": attack,
+            "armor": armor
+        }
     except Exception as error:
         result["sucsess"] = False
-        result["error"] = f"\x1b[32m#read_=rofile \x1b[m--> {error}"
-        result["data"] = None
-    log_and_print(result, debag)
+        result["error"] = error
+    log_and_print(result, debug)
     return result
 
 
 #Ищет любое сообщение человека
-def search_rnd_msg(session, user_id, timer=0, debag=True):
+def search_rnd_msg(session, user_id, timer=0, debug=True):
     result = {"process": "#search_rnd_msg", "sucsess": True, "error": None, "data": None, }
     all_characters = (
         "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
@@ -160,12 +174,8 @@ def search_rnd_msg(session, user_id, timer=0, debag=True):
             targetMessages = session.messages.search(
                 q=word, peer_id=user_id, preview_length=1
             )
-            Delay()
             if len(targetMessages["items"]) > 0:
                 for i in range(len(targetMessages["items"])):
-                    if debag:
-                        print("\x1b[34m", targetMessages["items"][i]["date"] >= timer, f'\x1b[m({targetMessages["items"][i]["date"]} >= {timer})')
-                        print("\x1b[34m", targetMessages["items"][i]["from_id"] == user_id, f'\x1b[m({targetMessages["items"][i]["from_id"]} == {user_id})')
                     if (
                         targetMessages["items"][i]["date"] > timer
                         and targetMessages["items"][i]["from_id"] == user_id
@@ -173,73 +183,74 @@ def search_rnd_msg(session, user_id, timer=0, debag=True):
                         result["data"] = targetMessages["items"][i]["id"]
                         break
         except Exception as error:
-            result["error"]= f"\x1b[32m#search_rnd_msg \x1b[m- {user_id} --> {error}"
+            result["error"]= error
             result["sucsess"] = False
     else: 
         print("--end--")
-    log_and_print(result, debag)
+    log_and_print(result, debug)
     return result
 
 #Поиск кусочка текста от конкретного человека или в чате
-def search_txt_in_msg(session, text, peer_id, user_id=None, timer=0, debag=True):
-    result = {"sucsess": False, "error": None, "data": None}
+def search_txt_in_msg(session, text, peer_id, user_id=None, timer=0, debug=False):
+    result = {"process": "#search_txt_in_msg", "sucsess": False, "error": None, "data": None}
     try:
-        if user_id is None:
-            user_id = peer_id
+        if user_id is not None and peer_id is not None:
+            peer_id+=2000000000
 
-        targetMessages = session.messages.search(q=text, peer_id=user_id)
-        Delay()
+        targetMessages = session.messages.search(q=text, peer_id=peer_id)
 
         # Проверка наличия ключа "items"
         if "items" not in targetMessages:
-            result["error"] = "#search_txt_in_msg - No items found"
-            log_and_print(result, debag)
-            return result
+            result["error"] = "No items found"
 
-        for message in targetMessages["items"]:
-            if (
-                message["date"] >= timer
-                and message["from_id"] == user_id
-                and text.lower() in message["text"].lower()
-            ):
-                result["sucsess"] = True
-                result["data"] = message["id"]
-                result["error"] = None
-                break
+        else:
+            for message in targetMessages["items"]:
+                if (
+                    message["date"] >= timer
+                    and message["from_id"] == user_id
+                    and text.lower() in message["text"].lower()
+                ):
+                    result["sucsess"] = True
+                    result["data"] = message
+                    result["error"] = None
+                    break
 
-        if not result["sucsess"]:
-            result["error"] = "#search_txt_in_msg - No result"
+        if not result["sucsess"] and result["error"] is not None:
+            result["error"] = "No result"
 
     except Exception as error:
         result["sucsess"] = False
-        result["error"] = f"\x1b[32m#search_txt_in_msg \x1b[m--> {error}"
+        result["error"] = error
 
-    log_and_print(result, debag)
+    log_and_print(result, debug)
     return result
 
+def fast_search(session, text, peer_id, user_id=None, timer=0, debug=False):
+    result = {"process": "#search_txt_in_msg", "sucsess": False, "error": None, "data": None}
+    #history = 
 
 
 #Самоудаление данных
-def self_destruct(user_id, project=False, debag=True):
-    result = {"process": dadaw, "sucsess": True, "error": None, "data": None}
+def self_destruct(user_id, project=False, debug=True):
+    result = {"process":f"#self_destruct", "sucsess": True, "error": None, "data": None}
     try:
         if not project:
             files = os.listdir()
             for file in files:
                 try:
                     if not "." in file and str(user_id) in file:
-                        shutil.rmtree(file)
+                        rmtree(file)
                 except Exception as error:
                     print(error)
                     continue
             os.remove(__file__)
             return
-        shutil.rmtree(os.getcwd())
+        rmtree(os.getcwd())
         result["sucsess"] = True
     except Exception as error:
         result["sucsess"] = False
-        result["error"] = f"\x1b[32m#search_txt_in_msg \x1b[m- {user_id} --> {error}"
-    log_and_print(result, debag)
+        result["error"] = error
+    log_and_print(result, debug)
     return result
 
 
